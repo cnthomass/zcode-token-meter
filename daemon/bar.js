@@ -454,7 +454,8 @@
 
   /* ---------- 回答末尾速率行 ----------
    * 插到最后一个 assistant-turn 容器内（内容列之后），随每次推送更新当前轮数据；
-   * React 重渲染会清掉插入节点 → 800ms 对账自动补挂（幂等：data-ztu-tail=turn_id）。
+   * 保留最近 8 轮快照，React 重渲染/换轮清掉节点后按「容器从后往前 ↔ 轮次从新到旧」
+   * 映射自动补挂（幂等：data-ztu-tail=turn_id，每容器至多一条）。
    * localStorage.ztuTail=0 关闭。 */
   var tailTurnId = "";
   function tailText(t, s) {
@@ -485,6 +486,7 @@
       if (!turns.length) return;
       var host = turns[turns.length - 1];
       var html = esc(tailText(t, s));
+      rememberTail(turnId, html);
       if (existing) {
         if (existing.getAttribute("data-ztu-txt") !== html) {
           existing.setAttribute("data-ztu-txt", html);
@@ -518,13 +520,52 @@
       "text-overflow:ellipsis;user-select:text;pointer-events:none}";
     document.head.appendChild(st);
   })();
+  /* 历史轮速率行：保留最近 TAIL_KEEP 轮快照，对账时按
+   * 「容器从后往前 ↔ 轮次从新到旧」映射补挂被 React 清掉的行（每容器至多一条）。 */
+  var TAIL_KEEP = 8;
+  var tailHistory = [];        // [{turnId, html}] 按时间序
+  var tailReinserts = 0;
+  function rememberTail(turnId, html) {
+    var e = null;
+    for (var i = 0; i < tailHistory.length; i++) {
+      if (tailHistory[i].turnId === turnId) { e = tailHistory[i]; break; }
+    }
+    if (e) { e.html = html; return; }
+    tailHistory.push({ turnId: turnId, html: html });
+    if (tailHistory.length > TAIL_KEEP) tailHistory.shift();
+  }
   setInterval(function () {
     if (document.hidden || stale()) return;
-    // 对账：当前轮的行被 React 清掉则补挂；换轮后不再复活旧行
-    if (tailTurnId && !document.querySelector('[data-ztu-tail="' + tailTurnId + '"]')) {
+    try {
+      if (localStorage.getItem("ztuTail") === "0") return;
       var s = currentSession();
-      if (s && s.turn && s.turn.turn_id === tailTurnId) upsertTail();
-    }
+      var curId = s && s.turn && s.turn.turn_id;
+      var turns = document.querySelectorAll('[class*="assistant-turn"]');
+      // 1) 当前轮：行被清则补挂
+      if (curId && tailTurnId === curId &&
+          !document.querySelector('[data-ztu-tail="' + curId + '"]') && turns.length) {
+        upsertTail();
+        tailReinserts++;
+      }
+      // 2) 历史轮：倒数第 k 个容器 ↔ tailHistory 里除当前轮外从新到旧第 k 条
+      var prev = [];
+      for (var i = tailHistory.length - 1; i >= 0; i--) {
+        if (tailHistory[i].turnId !== curId) prev.push(tailHistory[i]);
+      }
+      for (var k = 1; k <= prev.length && k < turns.length; k++) {
+        var host = turns[turns.length - 1 - k];
+        if (!host || host.querySelector(".ztu-tailline")) continue;
+        var entry = prev[k - 1];
+        var line = document.createElement("div");
+        line.className = "ztu-tailline";
+        line.setAttribute("data-ztu-tail", entry.turnId);
+        line.setAttribute("data-ztu-txt", entry.html);
+        line.innerHTML = entry.html;
+        host.appendChild(line);
+        tailReinserts++;
+      }
+      diagSet("tailHist", { kept: tailHistory.length, reinserts: tailReinserts });
+    } catch (e) { diagSet("tailErr", String(e && e.message || e)); }
   }, 800);
 
   /* ---------- 主题 ---------- */
