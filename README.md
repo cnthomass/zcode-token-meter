@@ -45,6 +45,8 @@ app.asar 入口末尾追加一行 dynamic import
 - 统计口径：input_tokens 已含缓存读取；命中率 = cache_read ÷ input_tokens；
   速度 = 输出 ÷ 生成窗口（含思考请求按 started→completed，思考在首字前流出）；
   上下文 = 最近一次请求 input ÷ 模型窗口；子智能体按 session.parent_id 关联累计。
+- 「📅 今日」分段口径 = **当前会话今日**（本地 0 点以来该会话的消耗，子智能体另计）；
+  悬停可看「全部会话今日」对照。
 - 安全边界：任何失败只写日志，不影响宿主；不读凭据，不出网。
 
 ## 安装

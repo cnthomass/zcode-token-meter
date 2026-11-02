@@ -147,7 +147,7 @@ def latest_session_id(con):
 
 # ---------------------------------------------------------------- per-session metrics
 
-def session_metrics(con, session_id, limits, default_limit=DEFAULT_CONTEXT_LIMIT):
+def session_metrics(con, session_id, limits, default_limit=DEFAULT_CONTEXT_LIMIT, day0=None):
     m = {"session_id": session_id}
     main = "AND agent = '%s'" % MAIN_AGENT
 
@@ -243,6 +243,29 @@ def session_metrics(con, session_id, limits, default_limit=DEFAULT_CONTEXT_LIMIT
     sub = dict(r[0]) if r else {"reqs": 0, "subs": 0, "tout": 0, "tin": 0, "last_done": None}
     sub["running"] = bool(sub.get("last_done") and now_ms - sub["last_done"] <= SUB_RUNNING_MS)
     m["subagent"] = sub
+
+    # --- 本会话今日（该会话在今天 0 点以来的消耗；子智能体单独一列） ---
+    if day0:
+        r = q(con, """
+            SELECT COUNT(*) reqs, COUNT(DISTINCT turn_id) turns,
+                   SUM(input_tokens) tin, SUM(output_tokens) tout,
+                   SUM(reasoning_tokens) think, SUM(cache_read_input_tokens) cread
+            FROM model_usage WHERE session_id = ? %s AND started_at >= ?""" % main,
+            (session_id, day0))
+        st = dict(r[0]) if r and r[0]["reqs"] else dict(
+            reqs=0, turns=0, tin=0, tout=0, think=0, cread=0)
+        r = q(con, """
+            SELECT COUNT(*) reqs, SUM(mu.output_tokens) tout, SUM(mu.input_tokens) tin
+            FROM model_usage mu JOIN session ch ON ch.id = mu.session_id AND ch.parent_id = ?
+            WHERE mu.started_at >= ? AND mu.query_source = 'subagent'""", (session_id, day0))
+        sd = dict(r[0]) if r else {}
+        st["sub_tout"] = sd.get("tout") or 0
+        st["sub_tin"] = sd.get("tin") or 0
+        st["sub_reqs"] = sd.get("reqs") or 0
+    else:
+        st = dict(reqs=0, turns=0, tin=0, tout=0, think=0, cread=0,
+                  sub_tout=0, sub_tin=0, sub_reqs=0)
+    m["session_today"] = st
     return m
 
 
@@ -282,7 +305,7 @@ def snapshot(con, sids, day0, limits, default_limit=DEFAULT_CONTEXT_LIMIT):
             continue
         seen.append(sid)
         try:
-            sessions[sid] = session_metrics(con, sid, limits, default_limit)
+            sessions[sid] = session_metrics(con, sid, limits, default_limit, day0)
         except Exception:
             continue
     snap = {"sessions": sessions, "ts": int(time.time() * 1000)}
@@ -359,7 +382,7 @@ def render_rank(rows, days):
 
 def collect_legacy(con, session_id, day0, limits, default_limit=DEFAULT_CONTEXT_LIMIT):
     """单会话旧版扁平结构（statusline/panel/tail 渲染用）。"""
-    m = session_metrics(con, session_id, limits, default_limit)
+    m = session_metrics(con, session_id, limits, default_limit, day0)
     s = m["session"]
     t = m.get("turn") or {}
     flat = {
@@ -373,6 +396,7 @@ def collect_legacy(con, session_id, day0, limits, default_limit=DEFAULT_CONTEXT_
                     "t0": s["t0"], "t1": s["t1"], "tools": s["tools"],
                     "title": s.get("title"), "code": s.get("code") or {}},
         "tools_session": s["tools"],
+        "session_today": m.get("session_today") or {},
         "today": {}, "today_subagent": {},
         "subagent": m["subagent"],
     }
@@ -468,9 +492,16 @@ def render_panel(m):
         lines.append("子智能体  %s（%s 个 · %s 次请求）%s" % (
             fmt_tokens((sub["tin"] or 0) + (sub["tout"] or 0)),
             sub.get("subs") or 0, sub.get("reqs") or 0, run))
+    st = m.get("session_today") or {}
+    if st.get("tin") or st.get("tout"):
+        lines.append("本会话今日  %s（%s 次请求%s）" % (
+            fmt_tokens((st.get("tin") or 0) + (st.get("tout") or 0)),
+            st.get("reqs") or 0,
+            ("，另子智能体 %s" % fmt_tokens((st.get("sub_tin") or 0) + (st.get("sub_tout") or 0)))
+            if (st.get("sub_tin") or st.get("sub_tout")) else ""))
     td = m.get("today") or {}
     if td.get("tin"):
-        lines.append("今日合计  %s（%s 次请求 · %s 个会话）" % (
+        lines.append("今日全部会话  %s（%s 次请求 · %s 个会话）" % (
             fmt_tokens((td["tin"] or 0) + (td["tout"] or 0)),
             td.get("reqs") or 0, td.get("sessions") or 0))
     return "\n".join(lines)

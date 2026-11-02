@@ -228,8 +228,9 @@
       (err ? ' <span class="ztu-dot err" title=""></span>' + esc(String(err)) : "");
     if (!err) segs.tools.textContent = String(tools.total || 0);
 
-    // 今日
-    segs.today.textContent = wan(tsum(today)) || "0";
+    // 今日（口径：当前会话今日）
+    var st = s.session_today || {};
+    segs.today.textContent = wan(tsum(st)) || "0";
 
     // 子智能体
     var subT = tsum(sub);
@@ -244,7 +245,7 @@
     function tipRowsFor(key) {
       var s = currentSession(); if (!s) return null;
       var t = s.turn || {}, sess = s.session || {}, ctx = s.context || {}, sub = s.subagent || {};
-      var today = payload.today || {}, tas = payload.today_subagent || {};
+      var today = payload.today || {}, st = s.session_today || {}, tas = payload.today_subagent || {};
       switch (key) {
         case "zu-speed": {
           var rows = [];
@@ -310,9 +311,13 @@
           return rows0;
         }
         case "zu-today": {
-          var rows3 = [["合计", wan(tsum(today)) + " token"],
-                       ["输入", wan(today.tin || 0) + (today.tin ? "（命中 " + Math.round(pct(today.cread || 0, today.tin)) + "%）" : "")],
-                       ["输出", wan(today.tout || 0) + (today.think ? "（含思考 " + wan(today.think) + "）" : "")],
+          var rows3 = [["〔本会话今日〕", ""],
+                       ["合计", wan(tsum(st)) + " token" + (st.sub_tout + st.sub_tin ? "（另子智能体 " + wan(st.sub_tout + st.sub_tin) + "）" : "")],
+                       ["输入", wan(st.tin || 0) + (st.tin ? "（命中 " + Math.round(pct(st.cread || 0, st.tin)) + "%）" : "")],
+                       ["输出", wan(st.tout || 0) + (st.think ? "（含思考 " + wan(st.think) + "）" : "")],
+                       ["规模", (st.reqs || 0) + " 次请求 · " + (st.turns || 0) + " 轮"],
+                       ["〔全部会话今日〕", ""],
+                       ["合计", wan(tsum(today)) + " token"],
                        ["规模", (today.reqs || 0) + " 次请求 · " + (today.sessions || 0) + " 个会话（仅主链路）"]];
           return rows3;
         }
@@ -373,10 +378,12 @@
     var title = cleanTitle(sess.title);
     panel.querySelector("#ztu-p-title").textContent = title ? "会话：" + title : "";
     var today = (payload && payload.today) || {};
+    var st = s.session_today || {};
     var bodyHtml =
       rowLine("本窗口会话", mySid || "（默认最近活跃）") +
       rowLine("模型", String(s.model || "–")) +
-      rowLine("今日请求", (today.reqs || 0) + " 次 · " + (today.sessions || 0) + " 会话") +
+      rowLine("本会话今日", (st.reqs || 0) + " 次 · " + wan(tsum(st)) + " token") +
+      rowLine("全部今日", (today.reqs || 0) + " 次 · " + (today.sessions || 0) + " 会话") +
       rowLine("数据延迟", payload ? ((Date.now() - payload.ts) / 1000).toFixed(0) + " 秒前" : "–");
     var rank = (payload && payload.rank_today) || [];
     if (rank.length) {
