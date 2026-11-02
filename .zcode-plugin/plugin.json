@@ -1,6 +1,6 @@
 {
   "name": "zcode-token-meter",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "对话窗口底部的 Token 用量仪表：模型生成速度、上下文占比、本轮/会话/今日 token、缓存命中、工具调用与错误、子智能体消耗；提供 /usage 查询。通过 app.asar 注入实现（自动备份，可一键卸载）。",
   "author": {
     "name": "wangchao"
