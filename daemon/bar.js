@@ -37,8 +37,10 @@
     return n.toLocaleString("en-US");
   }
   function trim(v) {
-    var s = v >= 100 ? v.toFixed(0) : v.toFixed(2);
-    return s.replace(/\.?0+$/, "");
+    // 整数万（>=100）尾零是有效数字不可剥（5930万 != 593万）；小数才剥尾零（16.50 -> 16.5）
+    if (v >= 100) return v.toFixed(0);
+    var s = v.toFixed(2);
+    return s.replace(/0+$/, "").replace(/\.$/, "");
   }
   function pct(a, b) { return b > 0 ? (a * 100 / b) : null; }
   function f1(v) { return v == null ? null : Math.round(v * 10) / 10; }
