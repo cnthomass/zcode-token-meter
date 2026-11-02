@@ -287,7 +287,72 @@ def snapshot(con, sids, day0, limits, default_limit=DEFAULT_CONTEXT_LIMIT):
             continue
     snap = {"sessions": sessions, "ts": int(time.time() * 1000)}
     snap.update(global_metrics(con, day0))
+    snap["rank_today"] = rank_sessions(con, day0, sort="total", limit=5)
     return snap
+
+
+# ---------------------------------------------------------------- 排行
+
+def rank_sessions(con, since_ms, sort="tout", limit=20):
+    """会话排行（主链路）。sort: tout|tin|total|reqs|recent；since_ms=0 表示全部历史。"""
+    order = {"tout": "tout", "tin": "tin", "total": "total", "reqs": "reqs",
+             "recent": "tu"}.get(sort, "tout")
+    where = "WHERE mu.started_at >= ? AND mu.agent = '%s'" % MAIN_AGENT if since_ms else         "WHERE mu.agent = '%s'" % MAIN_AGENT
+    rows = q(con, """
+        SELECT mu.session_id sid, MAX(s.title) title, MAX(s.time_updated) tu,
+               SUM(mu.input_tokens) tin, SUM(mu.output_tokens) tout,
+               SUM(mu.reasoning_tokens) think, SUM(mu.cache_read_input_tokens) cread,
+               COUNT(*) reqs, COUNT(DISTINCT mu.turn_id) turns,
+               MIN(mu.started_at) t0, MAX(mu.completed_at) t1
+        FROM model_usage mu JOIN session s ON s.id = mu.session_id
+        %s
+        GROUP BY mu.session_id""" % where, (since_ms,) if since_ms else ())
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["total"] = (d["tin"] or 0) + (d["tout"] or 0)
+        out.append(d)
+    sub = q(con, """
+        SELECT ch.parent_id pid, COUNT(*) reqs, SUM(mu.output_tokens) tout,
+               SUM(mu.input_tokens) tin, COUNT(DISTINCT mu.session_id) subs
+        FROM model_usage mu JOIN session ch ON ch.id = mu.session_id
+        WHERE mu.query_source = 'subagent' AND ch.parent_id IS NOT NULL
+        %s
+        GROUP BY ch.parent_id""" % ("AND mu.started_at >= ?" if since_ms else ""),
+        (since_ms,) if since_ms else ())
+    submap = {r["pid"]: dict(r) for r in sub}
+    for d in out:
+        sd = submap.get(d["sid"]) or {}
+        d["sub_tout"] = sd.get("tout") or 0
+        d["sub_tin"] = sd.get("tin") or 0
+        d["sub_reqs"] = sd.get("reqs") or 0
+        d["subs"] = sd.get("subs") or 0
+        d["total"] += d["sub_tout"] + d["sub_tin"]
+    out.sort(key=lambda x: x[order] or 0, reverse=True)
+    return out[:limit]
+
+
+PIPE_ESC = chr(92) + chr(124)  # \|
+
+
+def render_rank(rows, days):
+    """Markdown 排行表（聊天内直接可读）。"""
+    def rng():
+        return "全部历史" if not days else "近 %d 天" % days
+    if not rows:
+        return "（%s暂无会话数据）" % rng()
+    lines = ["| # | 会话 | 输入 | 输出 | 思考 | 子智能体 | 轮次 | 请求 | 最近活跃 |",
+             "|---|------|------|------|------|----------|------|------|----------|"]
+    for i, d in enumerate(rows, 1):
+        title = (d.get("title") or d["sid"])
+        title = title[:24] + "…" if len(title) > 25 else title
+        act = fmt_clock(d.get("tu") or d.get("t1"))
+        lines.append("| %d | %s | %s | %s | %s | %s | %s | %s | %s |" % (
+            i, title.replace("|", PIPE_ESC), fmt_tokens(d["tin"]), fmt_tokens(d["tout"]),
+            fmt_tokens(d["think"]),
+            (fmt_tokens(d["sub_tout"] + d["sub_tin"]) + "(%d个)" % d["subs"]) if d["subs"] else "–",
+            d["turns"], d["reqs"], act))
+    return chr(10).join(lines)
 
 
 # ---------------------------------------------------------------- human renderers
@@ -419,8 +484,12 @@ def main():
     ap.add_argument("--session", help="单会话查询（默认取最近活跃会话）")
     ap.add_argument("--sids", help="多会话快照（JSON 数组，状态栏泵用）")
     ap.add_argument("--context-limit", type=int, help="覆盖上下文窗口大小")
-    ap.add_argument("--format", choices=["statusline", "panel", "tail", "json"],
+    ap.add_argument("--format", choices=["statusline", "panel", "tail", "json", "rank"],
                     default="statusline")
+    ap.add_argument("--days", type=int, default=7, help="排行时间窗（天，0=全部历史）")
+    ap.add_argument("--sort", default="total",
+                    choices=["tout", "tin", "total", "reqs", "recent"])
+    ap.add_argument("--limit", type=int, default=20)
     args = ap.parse_args()
 
     global CONFIG
@@ -435,6 +504,12 @@ def main():
 
     con = connect(args.db)
     day0 = day_start_ms()
+    if args.format == "rank":
+        since = 0 if args.days <= 0 else int(time.time() * 1000) - args.days * 86400000
+        rows = rank_sessions(con, since, args.sort, args.limit)
+        print(render_rank(rows, args.days))
+        con.close()
+        return
 
     if args.sids:
         try:

@@ -367,11 +367,27 @@
     var title = (sess.title || "");
     panel.querySelector("#ztu-p-title").textContent = title ? "会话：" + title : "";
     var today = (payload && payload.today) || {};
-    panel.querySelector("#ztu-p-body").innerHTML =
+    var bodyHtml =
       rowLine("本窗口会话", mySid || "（默认最近活跃）") +
       rowLine("模型", String(s.model || "–")) +
       rowLine("今日请求", (today.reqs || 0) + " 次 · " + (today.sessions || 0) + " 会话") +
       rowLine("数据延迟", payload ? ((Date.now() - payload.ts) / 1000).toFixed(0) + " 秒前" : "–");
+    var rank = (payload && payload.rank_today) || [];
+    if (rank.length) {
+      bodyHtml += '<div style="margin-top:8px;opacity:.65;font-weight:700">📊 今日排行 TOP' +
+        Math.min(rank.length, 5) + '</div>';
+      rank.forEach(function (d, i) {
+        var t = String(d.title || d.sid || "");
+        if (t.length > 15) t = t.slice(0, 15) + "…";
+        var tot = (d.tin || 0) + (d.tout || 0) + (d.sub_tin || 0) + (d.sub_tout || 0);
+        var cur = (d.sid === mySid) ? ' style="color:var(--primary,#4da3ff)"' : "";
+        bodyHtml += '<div' + cur + '><span style="opacity:.5;display:inline-block;width:16px">' +
+          (i + 1) + '</span>' + esc(t) +
+          '<span style="opacity:.55;float:right;font-variant-numeric:tabular-nums">' +
+          esc(wan(tot)) + '</span></div>';
+      });
+    }
+    panel.querySelector("#ztu-p-body").innerHTML = bodyHtml;
     // 内容填充后尺寸才稳定，此时以 ⚙ 按钮为锚定位：右对齐、上方优先、双向钳制
     var gr = gearEl.getBoundingClientRect();
     var pw = panel.offsetWidth, ph = panel.offsetHeight;

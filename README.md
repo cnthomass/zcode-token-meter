@@ -75,6 +75,19 @@ python installer/install.py --finish-pending  # asar 被占用时的收尾（先
 ZCode 设置 → 插件 → 添加插件市场 → 选择本仓库目录（含 `marketplace.json`）→
 安装 **zcode-token-meter** → 重启。
 
+## 对话内查询
+
+安装插件后（或把 `skills/`、`commands/` 拷到 `~/.agents/`），在对话框：
+
+```
+/usage              当前会话明细面板
+/usage rank         会话排行（默认近7天按总量；支持 30天/全部/按输入/按请求/最近活跃）
+/usage today        今日合计
+/usage tail         单行速率行
+```
+
+不输命令直接问"这轮用了多少 token / 速度多快 / 上下文还剩多少"也会自动触发。
+
 ## 配置
 
 `~/.zcode/ztu-statusbar/config.json`：
