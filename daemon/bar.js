@@ -711,6 +711,9 @@
         }
       }
       diagSet("lastUpdate", Date.now());
+      diagSet("rankEcho", (payload.rank_today || []).map(function (r) {
+        return [String(r.sid || "").slice(-6), r.tin, r.tout, r.sub_tin, r.sub_tout];
+      }));
       setTimeout(upsertTail, 80);   // 让 React 先落定再挂速率行
       lastSig = "";   // 强制下帧重画
     } catch (e) { diagSet("updateErr", String(e && e.message || e)); }
