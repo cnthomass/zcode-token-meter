@@ -1,0 +1,13 @@
+{
+  "python_path": "",
+  "rate_ms": 1500,
+  "debounce_ms": 300,
+  "heartbeat_ms": 30000,
+  "context_limits": {
+    "glm-5.3": 1000000,
+    "glm-5.3-flash": 1000000,
+    "glm-5.3-flashx": 1000000,
+    "deepseek-v4.1": 1000000
+  },
+  "default_context_limit": 200000
+}
