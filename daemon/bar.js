@@ -177,14 +177,16 @@
     var today = (payload && payload.today) || {};
     var tools = sess.tools || {};
     var sig = JSON.stringify([s, today, payload && payload.today_subagent, mySid,
+      Math.round((live.speed || 0) * 10), liveSpeedFresh(),
       bar.classList.contains("zu-light")]);
     if (sig === lastSig) return false;
     lastSig = sig;
 
     // 生成速度
     var sp = t && (t.last_speed != null ? t.last_speed : null);
-    var spv = f1(sp);
-    segs.speed.textContent = spv != null ? spv.toFixed(1) : "–";
+    var liveOn = liveSpeedFresh() && live.speed > 0;
+    var spv = liveOn ? f1(live.speed) : f1(sp);
+    segs.speed.textContent = spv != null ? (liveOn ? "≈" : "") + spv.toFixed(1) : "–";
     segs.speed.parentElement.classList.forEach(function (c) {
       if (c.indexOf("b-") === 0) segs.speed.parentElement.classList.remove(c);
     });
@@ -243,7 +245,9 @@
       var today = payload.today || {}, tas = payload.today_subagent || {};
       switch (key) {
         case "zu-speed": {
-          var rows = [["本轮速度", (t.last_speed != null ? t.last_speed.toFixed(1) : "–") + " token/s"]];
+          var rows = [];
+          if (liveSpeedFresh() && live.speed > 0) rows.push(["实时(估算)", "≈" + live.speed.toFixed(1) + " token/s（DOM 采样）"]);
+          rows.push(["本轮速度", (t.last_speed != null ? t.last_speed.toFixed(1) : "–") + " token/s"]);
           if (t.peak_speed != null) rows.push(["本轮峰值", t.peak_speed.toFixed(1) + " token/s（" + t.segments + " 段加权）"]);
           if (t.ttft) rows.push(["首字延迟", secs(t.ttft)]);
           if (t.dur) rows.push(["生成耗时", secs(t.dur)]);
@@ -409,6 +413,44 @@
   }
   function panelEsc(e) { if (e.key === "Escape" && panel) togglePanel(); }
   gearEl.addEventListener("click", togglePanel);
+
+  /* ---------- 流式实时速率（DOM 采样）----------
+   * 流式回答的文本实时渲染进最后一条 assistant-turn，采样字符增量折算 t/s：
+   * tokens ≈ CJK字符×0.7 + 其他字符÷3.5（中英混编经验系数，估算态显示 ≰ 前缀）。
+   * localStorage.ztuLive=0 关闭。 */
+  var live = { chars: -1, t: 0, speed: 0, at: 0, sid: "" };
+  function liveSpeedFresh() { return Date.now() - live.at < 2200; }
+  function sampleLive() {
+    if (stale() || document.hidden) return;
+    try {
+      if (localStorage.getItem("ztuLive") === "0") { live.speed = 0; live.at = 0; return; }
+      var turns = document.querySelectorAll('[class*="assistant-turn"]');
+      if (!turns.length) return;
+      var node = turns[turns.length - 1].querySelector('[class*="chat-assistant-history-content"]');
+      if (!node) node = turns[turns.length - 1];
+      var txt = node.textContent || "";
+      if (txt.length > 300000) txt = txt.slice(-300000);
+      var n = txt.length, now = Date.now();
+      if (live.chars < 0 || mySid !== live.sid) { live.chars = n; live.t = now; live.sid = mySid; return; }
+      var dChars = n - live.chars, dt = now - live.t;
+      live.chars = n; live.t = now;
+      if (dt < 150 || dt > 4000) return;
+      if (dChars <= 0) return;          // 工具块插入/重渲染导致的收缩：重置基线不更新速度
+      var slice = txt.slice(Math.max(0, n - dChars - 40), n);
+      var cjk = 0;
+      for (var i = 0; i < slice.length; i++) {
+        var cc = slice.charCodeAt(i);
+        if (cc >= 0x2E80 && cc <= 0x9FFF) cjk++;       // CJK 统一表意区
+      }
+      var other = slice.length - cjk;
+      var tokens = cjk * 0.7 + other / 3.5;
+      var inst = tokens * 1000 / dt;
+      live.speed = live.speed ? live.speed * 0.6 + inst * 0.4 : inst;
+      live.at = now;
+      diagSet("liveEst", { speed: Math.round(live.speed * 10) / 10, dChars: dChars, dt: dt });
+    } catch (e) { diagSet("liveErr", String(e && e.message || e)); }
+  }
+  setInterval(sampleLive, 400);
 
   /* ---------- 回答末尾速率行 ----------
    * 插到最后一个 assistant-turn 容器内（内容列之后），随每次推送更新当前轮数据；
