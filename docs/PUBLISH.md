@@ -35,15 +35,22 @@ ZCode 设置 → 插件 → 添加插件市场 → 粘贴本仓库的**公开 UR
 
 ### B. 官方精选市场（zcode-plugins-official）
 
-官方精选市场为白名单制，收录需经官方审核。通用路径：
+实测机制（2026-11）：目录托管在 Z.ai 官方 CDN
+`https://cdn-zcode.z.ai/zcode/official-plugin/marketplace.json`（应用内置该 URL），
+当前 52 个插件 = 官方 43 + **社区/第三方 9**（TencentCloudBase、Mimosa、luochang212、
+Deemos、VAST 等，个人作者有收录先例）。社区插件的收录形态：官方把插件打包成 zip
+托管到其 CDN（`plugins/<名>/<版本>/plugin.zip` + sha256 + icon 一并托管），
+**即收录 = 官方代为托管分发**。商店 UI 无自助提交入口，需走官方渠道申请：
 
-1. 在 ZCode 官方渠道（插件市场页的"提交插件"入口 / 官方 GitHub 组织的 marketplace
-   仓库 PR / 官方反馈渠道）找到提交表单或 marketplace 仓库
-2. 提交内容：公开仓库 URL + 插件名 + 一句话描述 + 截图（本 README 首图或自截状态条）
-3. 审核要点预期：manifest 规范、权限披露、更新机制——本插件有两点需要**主动披露**：
-   - 采用 app.asar 注入实现（无官方 statusLine API 所致的社区通行方案），升级 ZCode
-     后需重跑安装器；安装器有备份与字节级还原
-   - 引擎只读本地 db、不出网、不读凭据（README"安全边界"已写明）
+1. 准备材料：公开仓库 URL + 双语 displayName/description + 截图 + 权限披露（见下）
+2. 通过 Z.ai 官方渠道提交申请：智谱开放平台（bigmodel.cn）工单/反馈、ZCode 应用内
+   反馈入口、或你所在企业的 Z.ai 对接人
+3. 审核通过后官方会索要插件包（可从仓库打包）并托管上架；后续版本更新同样经官方同步
+4. 需要主动披露的两点：app.asar 注入方案（无官方 statusLine API 所致的社区通行做法，
+   升级 ZCode 后需重跑安装器，有备份与字节级还原）；引擎只读本地 db、不出网、不读凭据
+
+> 不建议投 anthropics/claude-plugins-official（GitHub 仓库、接受社区 PR）：本插件的
+> 统计引擎依赖 ZCode 本地 db，对纯 Claude Code 用户无数据，投了也是无效收录。
 
 ## 3. 版本更新流程
 
