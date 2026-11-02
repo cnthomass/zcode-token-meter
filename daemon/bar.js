@@ -410,6 +410,74 @@
   function panelEsc(e) { if (e.key === "Escape" && panel) togglePanel(); }
   gearEl.addEventListener("click", togglePanel);
 
+  /* ---------- 回答末尾速率行 ----------
+   * 插到最后一个 assistant-turn 容器内（内容列之后），随每次推送更新当前轮数据；
+   * React 重渲染会清掉插入节点 → 800ms 对账自动补挂（幂等：data-ztu-tail=turn_id）。
+   * localStorage.ztuTail=0 关闭。 */
+  var tailTurnId = "";
+  function tailText(t, s) {
+    var bits = [];
+    var sp = t.last_speed != null ? t.last_speed : null;
+    if (sp) bits.push("⚡" + (Math.round(sp * 10) / 10) + " token/s(本轮)");
+    if (t.ttft) bits.push("首字" + secs(t.ttft));
+    if (t.tout != null) {
+      var out = wan(t.tout);
+      if (t.think) out += "(含思考" + wan(t.think) + ")";
+      bits.push("输出" + out + (t.dur ? " / 生成" + secs(t.dur) : ""));
+    }
+    if (t.segments) bits.push(t.segments + " 段" + (t.peak_speed ? "/峰" + (Math.round(t.peak_speed)) : ""));
+    var sess = s.session || {};
+    if (sess.tin) bits.push("累计" + wan(tsum(sess)));
+    if (t.completed_at) bits.push("⏱" + fmtClock(t.completed_at));
+    return bits.join(" · ");
+  }
+  function upsertTail() {
+    try {
+      if (localStorage.getItem("ztuTail") === "0") return;
+      var s = currentSession();
+      var t = s && s.turn;
+      if (!t || t.tout == null || !t.turn_id || !t.completed_at) return;
+      var turnId = t.turn_id;
+      var existing = document.querySelector('[data-ztu-tail="' + turnId + '"]');
+      var turns = document.querySelectorAll('[class*="assistant-turn"]');
+      if (!turns.length) return;
+      var host = turns[turns.length - 1];
+      var html = esc(tailText(t, s));
+      if (existing) {
+        if (existing.getAttribute("data-ztu-txt") !== html) {
+          existing.setAttribute("data-ztu-txt", html);
+          existing.innerHTML = html;   // 内容已 esc
+        }
+        tailTurnId = turnId;
+        return;
+      }
+      // 本轮还没有行：挂到最后一个 assistant-turn；若其对应当前轮
+      var line = document.createElement("div");
+      line.className = "ztu-tailline";
+      line.setAttribute("data-ztu-tail", turnId);
+      line.setAttribute("data-ztu-txt", html);
+      line.innerHTML = html;
+      host.appendChild(line);
+      tailTurnId = turnId;
+      diagSet("tailLast", { turnId: turnId, at: Date.now() });
+    } catch (e) { diagSet("tailErr", String(e && e.message || e)); }
+  }
+  (function tailStyle() {
+    var st = document.createElement("style");
+    st.textContent = ".ztu-tailline{font:11px/1.8 Consolas,'Segoe UI',monospace;" +
+      "color:inherit;opacity:.5;padding:0 8px 6px;white-space:nowrap;overflow:hidden;" +
+      "text-overflow:ellipsis;user-select:text;pointer-events:none}";
+    document.head.appendChild(st);
+  })();
+  setInterval(function () {
+    if (document.hidden || stale()) return;
+    // 对账：当前轮的行被 React 清掉则补挂；换轮后不再复活旧行
+    if (tailTurnId && !document.querySelector('[data-ztu-tail="' + tailTurnId + '"]')) {
+      var s = currentSession();
+      if (s && s.turn && s.turn.turn_id === tailTurnId) upsertTail();
+    }
+  }, 800);
+
   /* ---------- 主题 ---------- */
   var themeCache = { t: 0, light: false };
   function isLightTheme() {
@@ -549,6 +617,7 @@
         }
       }
       diagSet("lastUpdate", Date.now());
+      setTimeout(upsertTail, 80);   // 让 React 先落定再挂速率行
       lastSig = "";   // 强制下帧重画
     } catch (e) { diagSet("updateErr", String(e && e.message || e)); }
   };
