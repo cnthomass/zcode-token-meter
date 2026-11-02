@@ -491,9 +491,16 @@
           existing.innerHTML = html;   // 内容已 esc
         }
         tailTurnId = turnId;
+        // 更新路径同样清理宿主里其他轮的残留行
+        if (existing.parentElement) {
+          existing.parentElement.querySelectorAll(".ztu-tailline").forEach(function (n) {
+            if (n !== existing) n.remove();
+          });
+        }
         return;
       }
-      // 本轮还没有行：挂到最后一个 assistant-turn；若其对应当前轮
+      // 本轮还没有行：先清宿主里的旧轮速率行（React 按位置复用容器元素时会残留），再挂新行
+      host.querySelectorAll(".ztu-tailline").forEach(function (n) { n.remove(); });
       var line = document.createElement("div");
       line.className = "ztu-tailline";
       line.setAttribute("data-ztu-tail", turnId);
