@@ -368,7 +368,7 @@
       '<div style="margin-top:10px;opacity:.55;font-size:11px">数据源 ~/.zcode/cli/db/db.sqlite（只读）<br>' +
       '配置 ~/.zcode/ztu-statusbar/config.json · 卸载见插件 README</div>';
     document.body.appendChild(panel);
-    var title = (sess.title || "");
+    var title = cleanTitle(sess.title);
     panel.querySelector("#ztu-p-title").textContent = title ? "会话：" + title : "";
     var today = (payload && payload.today) || {};
     var bodyHtml =
@@ -381,7 +381,7 @@
       bodyHtml += '<div style="margin-top:8px;opacity:.65;font-weight:700">📊 今日排行 TOP' +
         Math.min(rank.length, 5) + '</div>';
       rank.forEach(function (d, i) {
-        var t = String(d.title || d.sid || "");
+        var t = cleanTitle(d.title || d.sid || "");
         if (t.length > 15) t = t.slice(0, 15) + "…";
         var tot = (d.tin || 0) + (d.tout || 0) + (d.sub_tin || 0) + (d.sub_tout || 0);
         var cur = (d.sid === mySid) ? ' style="color:var(--primary,#4da3ff)"' : "";
@@ -407,6 +407,10 @@
   function rowLine(k, v) {
     return '<div><span style="opacity:.6;display:inline-block;width:88px">' + esc(k) +
       "</span>" + esc(v) + "</div>";
+  }
+  function cleanTitle(t) {
+    // 自动标题可能含 Markdown 残渣：[文本](链接)→文本、反斜杠归一、去首尾空白
+    return String(t || "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\\+/g, "/").trim();
   }
   function panelOutside(e) {
     if (panel && !panel.contains(e.target) && !bar.contains(e.target)) togglePanel();
