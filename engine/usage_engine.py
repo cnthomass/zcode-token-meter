@@ -216,6 +216,11 @@ def session_metrics(con, session_id, limits, default_limit=DEFAULT_CONTEXT_LIMIT
                   SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) running
                   FROM tool_usage WHERE session_id = ?""", (session_id,))
     s["tools"] = dict(r[0]) if r else {"total": 0, "errors": 0, "running": 0}
+    rows = q(con, """SELECT model_id, COUNT(*) reqs, SUM(output_tokens) tout,
+                     SUM(input_tokens) tin, SUM(reasoning_tokens) think
+              FROM model_usage WHERE session_id = ? %s GROUP BY model_id
+              ORDER BY tout DESC LIMIT 6""" % main, (session_id,))
+    s["models_by"] = [dict(x) for x in rows]
     rows = q(con, """SELECT tool_name, COUNT(*) n,
                      SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) errs
                      FROM tool_usage WHERE session_id = ? GROUP BY tool_name
@@ -262,6 +267,12 @@ def session_metrics(con, session_id, limits, default_limit=DEFAULT_CONTEXT_LIMIT
         st["sub_tout"] = sd.get("tout") or 0
         st["sub_tin"] = sd.get("tin") or 0
         st["sub_reqs"] = sd.get("reqs") or 0
+        rows = q(con, """SELECT model_id, COUNT(*) reqs, SUM(output_tokens) tout,
+                         SUM(input_tokens) tin
+                  FROM model_usage WHERE session_id = ? %s AND started_at >= ?
+                  GROUP BY model_id ORDER BY tout DESC LIMIT 6""" % main,
+            (session_id, day0))
+        st["models_by"] = [dict(x) for x in rows]
     else:
         st = dict(reqs=0, turns=0, tin=0, tout=0, think=0, cread=0,
                   sub_tout=0, sub_tin=0, sub_reqs=0)
@@ -287,6 +298,11 @@ def global_metrics(con, day0):
                   SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) errors
                   FROM tool_usage WHERE started_at >= ?""", (day0,))
     out["tools_today"] = dict(r[0]) if r else {}
+    rows = q(con, """SELECT model_id, COUNT(*) reqs, SUM(output_tokens) tout,
+                     SUM(input_tokens) tin
+              FROM model_usage WHERE started_at >= ? %s GROUP BY model_id
+              ORDER BY tout DESC LIMIT 6""" % main, (day0,))
+    out["models_today_by"] = [dict(x) for x in rows]
     rows = q(con, """SELECT tool_name, COUNT(*) n FROM tool_usage
                      WHERE started_at >= ? GROUP BY tool_name
                      ORDER BY n DESC LIMIT 12""", (day0,))
@@ -396,6 +412,7 @@ def collect_legacy(con, session_id, day0, limits, default_limit=DEFAULT_CONTEXT_
                     "t0": s["t0"], "t1": s["t1"], "tools": s["tools"],
                     "title": s.get("title"), "code": s.get("code") or {}},
         "tools_session": s["tools"],
+        "models_by": (m.get("session") or {}).get("models_by") or [],
         "session_today": m.get("session_today") or {},
         "today": {}, "today_subagent": {},
         "subagent": m["subagent"],
@@ -463,6 +480,13 @@ def render_panel(m):
     lines.append("输入    %s (缓存命中 %s)" % (fmt_tokens(tin), fmt_pct(hit)))
     think = "（含思考 %s）" % fmt_tokens(s["think"]) if s.get("think") else ""
     lines.append("输出    %s%s" % (fmt_tokens(tout), think))
+    mb = m.get("models_by") or []
+    if mb:
+        parts = ["%s %s/%s次" % (x["model_id"], fmt_tokens(x["tout"]), x["reqs"])
+                 for x in mb[:3]]
+        if len(mb) > 3:
+            parts.append("等 %d 个模型" % len(mb))
+        lines.append("模型分布  " + " · ".join(parts))
     tools = s["tools"]
     scale = "%s 轮 · %s 次请求 · 工具 %s" % (s.get("turns") or 0, s.get("reqs") or 0,
                                             tools.get("total") or 0)

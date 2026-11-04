@@ -229,7 +229,7 @@
     if (!err) segs.tools.textContent = String(tools.total || 0);
 
     // 今日（口径：当前会话今日）
-    var st = s.session_today || {};
+    var st = (s && s.session_today) || {};
     segs.today.textContent = wan(tsum(st)) || "0";
 
     // 子智能体
@@ -276,6 +276,14 @@
           var rows2 = [["输入", wan(sess.tin) + (sess.tin ? "（命中 " + Math.round(pct(sess.cread || 0, sess.tin)) + "%）" : "")],
                        ["输出", wan(sess.tout) + (sess.think ? "（含思考 " + wan(sess.think) + "）" : "")],
                        ["规模", (sess.turns || 0) + " 轮 · " + (sess.reqs || 0) + " 次请求 · 工具 " + ((sess.tools || {}).total || 0)]];
+          var mb = sess.models_by || [];
+          if (mb.length) {
+            rows2.push(["── 模型分布 ──", ""]);
+            mb.slice(0, 4).forEach(function (mm) {
+              rows2.push(["  " + mm.model_id, wan(mm.tout) + " 输出 · " + mm.reqs + " 次"]);
+            });
+            if (mb.length > 4) rows2.push(["  其余 " + (mb.length - 4) + " 个模型", ""]);
+          }
           if (sess.t0) rows2.push(["时间范围", fmtClock(sess.t0) + " – " + fmtClock(sess.t1)]);
           var code = sess.code || {};
           if (code.add != null) rows2.push(["代码变更", "+" + (code.add || 0).toLocaleString() + " / -" + (code.del || 0).toLocaleString() + "（" + (code.files || 0) + " 文件）"]);
@@ -316,9 +324,24 @@
                        ["输入", wan(st.tin || 0) + (st.tin ? "（命中 " + Math.round(pct(st.cread || 0, st.tin)) + "%）" : "")],
                        ["输出", wan(st.tout || 0) + (st.think ? "（含思考 " + wan(st.think) + "）" : "")],
                        ["规模", (st.reqs || 0) + " 次请求 · " + (st.turns || 0) + " 轮"],
+                       ["── 本会话今日模型 ──", ""],
+                       ["__MB__", ""],
                        ["〔全部会话今日〕", ""],
                        ["合计", wan(tsum(today)) + " token"],
                        ["规模", (today.reqs || 0) + " 次请求 · " + (today.sessions || 0) + " 个会话（仅主链路）"]];
+          var smb = st.models_by || [];
+          if (smb.length) {
+            var mi = rows3.findIndex(function (r) { return r[0] === "__MB__"; });
+            var ins = [];
+            smb.slice(0, 4).forEach(function (mm) {
+              ins.push(["  " + mm.model_id, wan(mm.tout) + " 输出 · " + mm.reqs + " 次"]);
+            });
+            if (smb.length > 4) ins.push(["  其余 " + (smb.length - 4) + " 个模型", ""]);
+            rows3.splice.apply(rows3, [mi, 1].concat(ins));
+          } else {
+            var mi2 = rows3.findIndex(function (r) { return r[0] === "__MB__"; });
+            if (mi2 >= 0) rows3.splice(mi2, 1);
+          }
           return rows3;
         }
         case "zu-sub": {
@@ -398,6 +421,16 @@
           (i + 1) + '</span>' + esc(t) +
           '<span style="opacity:.55;float:right;font-variant-numeric:tabular-nums">' +
           esc(wan(tot)) + '</span></div>';
+      });
+    }
+    var mtb = (payload && payload.models_today_by) || [];
+    if (mtb.length) {
+      bodyHtml += '<div style="margin-top:8px;opacity:.65;font-weight:700">🤖 今日模型分布</div>';
+      mtb.slice(0, 5).forEach(function (mm) {
+        var mn = String(mm.model_id || "?");
+        bodyHtml += '<div><span style="opacity:.85">' + esc(mn) + '</span>' +
+          '<span style="opacity:.55;float:right;font-variant-numeric:tabular-nums">' +
+          esc(wan(mm.tout)) + ' · ' + mm.reqs + '次</span></div>';
       });
     }
     panel.querySelector("#ztu-p-body").innerHTML = bodyHtml;
