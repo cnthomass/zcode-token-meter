@@ -482,8 +482,8 @@ def render_panel(m):
     lines.append("输出    %s%s" % (fmt_tokens(tout), think))
     mb = m.get("models_by") or []
     if mb:
-        parts = ["%s %s/%s次" % (x["model_id"], fmt_tokens(x["tout"]), x["reqs"])
-                 for x in mb[:3]]
+        parts = ["%s 入%s/出%s/%s次" % (x["model_id"], fmt_tokens(x["tin"]),
+                 fmt_tokens(x["tout"]), x["reqs"]) for x in mb[:3]]
         if len(mb) > 3:
             parts.append("等 %d 个模型" % len(mb))
         lines.append("模型分布  " + " · ".join(parts))

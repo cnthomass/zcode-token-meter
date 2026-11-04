@@ -280,7 +280,7 @@
           if (mb.length) {
             rows2.push(["── 模型分布 ──", ""]);
             mb.slice(0, 4).forEach(function (mm) {
-              rows2.push(["  " + mm.model_id, wan(mm.tout) + " 输出 · " + mm.reqs + " 次"]);
+              rows2.push(["  " + mm.model_id, "输入 " + wan(mm.tin) + " · 输出 " + wan(mm.tout) + " · " + mm.reqs + " 次"]);
             });
             if (mb.length > 4) rows2.push(["  其余 " + (mb.length - 4) + " 个模型", ""]);
           }
@@ -334,7 +334,7 @@
             var mi = rows3.findIndex(function (r) { return r[0] === "__MB__"; });
             var ins = [];
             smb.slice(0, 4).forEach(function (mm) {
-              ins.push(["  " + mm.model_id, wan(mm.tout) + " 输出 · " + mm.reqs + " 次"]);
+              ins.push(["  " + mm.model_id, "输入 " + wan(mm.tin) + " · 输出 " + wan(mm.tout) + " · " + mm.reqs + " 次"]);
             });
             if (smb.length > 4) ins.push(["  其余 " + (smb.length - 4) + " 个模型", ""]);
             rows3.splice.apply(rows3, [mi, 1].concat(ins));
@@ -430,7 +430,7 @@
         var mn = String(mm.model_id || "?");
         bodyHtml += '<div><span style="opacity:.85">' + esc(mn) + '</span>' +
           '<span style="opacity:.55;float:right;font-variant-numeric:tabular-nums">' +
-          esc(wan(mm.tout)) + ' · ' + mm.reqs + '次</span></div>';
+          '入 ' + esc(wan(mm.tin)) + ' · 出 ' + esc(wan(mm.tout)) + '</span></div>';
       });
     }
     panel.querySelector("#ztu-p-body").innerHTML = bodyHtml;
