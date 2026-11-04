@@ -112,6 +112,7 @@
     segHTML("zu-sess", "📊", "会话累计") +
     segHTML("zu-tools", "🔧", "工具调用") +
     segHTML("zu-today", "📅", "今日合计") +
+    segHTML("zu-rank", "🏆", "会话排行") +
     segHTML("zu-sub", "🤖", "子智能体") +
     '<span class="ztu-gear" tabindex="0" role="button" aria-label="状态条设置">⚙</span>';
   var segs = {
@@ -121,6 +122,7 @@
     sess: row.querySelector(".zu-sess .ztu-v"),
     tools: row.querySelector(".zu-tools .ztu-v"),
     today: row.querySelector(".zu-today .ztu-v"),
+    rank: row.querySelector(".zu-rank .ztu-v"),
     sub: row.querySelector(".zu-sub .ztu-v"),
   };
 
@@ -180,6 +182,7 @@
     var tools = sess.tools || {};
     var sig = JSON.stringify([s, today, payload && payload.today_subagent, mySid,
       Math.round((live.speed || 0) * 10), liveSpeedFresh(),
+      payload && payload.rank_today && payload.rank_today[0] ? payload.rank_today[0].total : 0,
       bar.classList.contains("zu-light")]);
     if (sig === lastSig) return false;
     lastSig = sig;
@@ -231,6 +234,14 @@
     // 今日（口径：当前会话今日）
     var st = (s && s.session_today) || {};
     segs.today.textContent = wan(tsum(st)) || "0";
+
+    // 排行：今日 TOP1 会话
+    var rk = (payload && payload.rank_today) || [];
+    if (rk.length) {
+      var t1 = cleanTitle(rk[0].title || rk[0].sid || "");
+      if (t1.length > 8) t1 = t1.slice(0, 8) + "…";
+      rkEl.textContent = t1 + " " + wan(rk[0].total);
+    } else rkEl.textContent = "–";
 
     // 子智能体
     var subT = tsum(sub);
@@ -318,6 +329,20 @@
           }
           return rows0;
         }
+        case "zu-rank": {
+          var rr = payload.rank_today || [];
+          if (!rr.length) return [["会话排行", "今日暂无数据"]];
+          var rows4 = [];
+          rr.slice(0, 5).forEach(function (r0, i) {
+            var t0 = cleanTitle(r0.title || r0.sid || "");
+            if (t0.length > 18) t0 = t0.slice(0, 18) + "…";
+            rows4.push([i + 1 + ". " + t0,
+              "总 " + wan((r0.tin || 0) + (r0.tout || 0) + (r0.sub_tin || 0) + (r0.sub_tout || 0)) +
+              "（出 " + wan(r0.tout || 0) + "）· " + (r0.reqs || 0) + " 次"]);
+          });
+          rows4.push(["提示", "点击本段看 近7天 排行浮层"]);
+          return rows4;
+        }
         case "zu-today": {
           var rows3 = [["〔本会话今日〕", ""],
                        ["合计", wan(tsum(st)) + " token" + (st.sub_tout + st.sub_tin ? "（另子智能体 " + wan(st.sub_tout + st.sub_tin) + "）" : "")],
@@ -356,7 +381,8 @@
     row.querySelectorAll(".ztu-seg").forEach(function (el) {
       var key = (el.className.match(/zu-[a-z]+/) || [""])[0];
       var NAMES = { "zu-speed": "生成速度", "zu-ctx": "上下文", "zu-turn": "本轮（这次提问）",
-        "zu-sess": "会话累计", "zu-tools": "工具调用", "zu-today": "今日合计", "zu-sub": "子智能体" };
+        "zu-sess": "会话累计", "zu-tools": "工具调用", "zu-today": "今日合计",
+        "zu-rank": "会话排行（今日 TOP5）", "zu-sub": "子智能体" };
       function show() {
         try {
           var r = tipRowsFor(key);
@@ -460,6 +486,75 @@
   function panelEsc(e) { if (e.key === "Escape" && panel) togglePanel(); }
   gearEl.addEventListener("click", togglePanel);
 
+  /* ---------- 🏆 排行浮层（今日/近 7 天，迷你条形图） ---------- */
+  var rankSegEl = row.querySelector(".zu-rank");
+  var rankPop = null, rankPopTab = "today";
+  function rankRowsHTML(rows) {
+    if (!rows.length) return '<div style="opacity:.6">暂无数据</div>';
+    var max = rows[0].total || 1;
+    var h = "";
+    rows.forEach(function (r0, i) {
+      var t0 = cleanTitle(r0.title || r0.sid || "");
+      if (t0.length > 14) t0 = t0.slice(0, 14) + "…";
+      var tot = (r0.tin || 0) + (r0.tout || 0) + (r0.sub_tin || 0) + (r0.sub_tout || 0);
+      var w = Math.max(3, Math.round(tot / max * 100));
+      var cur = (r0.sid === mySid) ? ' style="color:var(--primary,#4da3ff)"' : "";
+      h += '<div' + cur + ' style="margin-bottom:6px"><div style="margin-bottom:2px">' +
+        '<span style="opacity:.5;display:inline-block;width:16px">' + (i + 1) + '</span>' + esc(t0) +
+        '<span style="opacity:.6;float:right;font-variant-numeric:tabular-nums">' + esc(wan(tot)) +
+        '</span></div><div style="height:5px;border-radius:3px;background:rgba(128,128,128,.25)">' +
+        '<div style="height:100%;width:' + w + '%;border-radius:3px;background:var(--primary,#4da3ff)"></div>' +
+        '</div></div>';
+    });
+    return h;
+  }
+  function renderRankPop() {
+    if (!rankPop) return;
+    var tabBtn = function (id, label) {
+      var act = rankPopTab === id;
+      return '<button type="button" data-tab="' + id + '" style="border:none;cursor:pointer;' +
+        'background:' + (act ? 'rgba(128,128,128,.3)' : 'transparent') + ';color:inherit;' +
+        'border-radius:6px;padding:2px 10px;font:12px ui-sans-serif,system-ui">' + label + '</button>';
+    };
+    var rows = rankPopTab === "week" ? (payload.rank_week || []) : (payload.rank_today || []);
+    rankPop.querySelector("#rp-body").innerHTML = rankRowsHTML(rows);
+    rankPop.querySelector("#rp-tabs").innerHTML = tabBtn("today", "今日") + tabBtn("week", "近 7 天");
+  }
+  function toggleRankPop() {
+    if (rankPop) { rankPop.remove(); rankPop = null;
+      document.removeEventListener("mousedown", rankPopOutside, true); return; }
+    rankPop = document.createElement("div");
+    rankPop.style.cssText = "position:fixed;z-index:2147483646;width:330px;" +
+      "max-height:calc(100vh - 16px);overflow:auto;overflow-x:hidden;scrollbar-width:thin;" +
+      "font:12px/1.7 ui-sans-serif,system-ui,'Segoe UI','Microsoft YaHei UI',sans-serif;" +
+      "background:var(--color-tooltip,#1d2026);color:#e6e8ec;border:1px solid rgba(255,255,255,.12);" +
+      "border-radius:10px;padding:12px 14px;box-shadow:0 12px 32px rgba(0,0,0,.4)";
+    rankPop.innerHTML = '<div style="font-weight:700;margin-bottom:6px">🏆 会话排行</div>' +
+      '<div id="rp-tabs" style="margin-bottom:10px"></div>' +
+      '<div id="rp-body"></div>' +
+      '<div style="margin-top:10px;opacity:.55;font-size:11px">口径：主链路+子智能体 · 自然日</div>';
+    document.body.appendChild(rankPop);
+    rankPop.querySelector("#rp-tabs").addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-tab]");
+      if (b) { rankPopTab = b.getAttribute("data-tab"); renderRankPop(); }
+    });
+    renderRankPop();
+    var gr = rankSegEl.getBoundingClientRect();
+    var pw = rankPop.offsetWidth, ph = rankPop.offsetHeight;
+    rankPop.style.left = Math.max(8, Math.min(gr.left, window.innerWidth - pw - 8)) + "px";
+    rankPop.style.top = Math.max(8, Math.min(gr.top - ph - 8, window.innerHeight - ph - 8)) + "px";
+    rankPop.addEventListener("click", function (e) { e.stopPropagation(); });
+    setTimeout(function () {
+      document.addEventListener("mousedown", rankPopOutside, true);
+    }, 0);
+  }
+  function rankPopOutside(e) {
+    if (rankPop && !rankPop.contains(e.target) && !bar.contains(e.target)) toggleRankPop();
+  }
+  rankSegEl.addEventListener("click", function (e) {
+    e.stopPropagation(); hideTip(); toggleRankPop();
+  });
+
   /* ---------- 流式实时速率（DOM 采样）----------
    * 流式回答的文本实时渲染进最后一条 assistant-turn，采样字符增量折算 t/s：
    * tokens ≈ CJK字符×0.7 + 其他字符÷3.5（中英混编经验系数，估算态显示 ≰ 前缀）。
@@ -532,6 +627,7 @@
    * 保留最近 8 轮快照，React 重渲染/换轮清掉节点后按「容器从后往前 ↔ 轮次从新到旧」
    * 映射自动补挂（幂等：data-ztu-tail=turn_id，每容器至多一条）。
    * localStorage.ztuTail=0 关闭。 */
+  var rkEl = row.querySelector(".zu-rank .ztu-v");
   var tailTurnId = "";
   function tailText(t, s) {
     var bits = [];
@@ -723,7 +819,7 @@
         }
       }
       var did = render();
-      if (did) diagSet("lastRender", Date.now());
+      if (did) { diagSet("lastRender", Date.now()); diagSet("frameErr", ""); }
       if (vis) {
         if (bar.style.display !== "block") { bar.style.display = "block"; diagSet("shownAt", Date.now()); }
         if (beacon) beacon.style.display = "none";

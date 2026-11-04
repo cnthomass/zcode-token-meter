@@ -327,6 +327,9 @@ def snapshot(con, sids, day0, limits, default_limit=DEFAULT_CONTEXT_LIMIT):
     snap = {"sessions": sessions, "ts": int(time.time() * 1000)}
     snap.update(global_metrics(con, day0))
     snap["rank_today"] = rank_sessions(con, day0, sort="total", limit=5)
+    lt = time.localtime(time.time() - 6 * 86400)
+    week0 = int(time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1)) * 1000)
+    snap["rank_week"] = rank_sessions(con, week0, sort="total", limit=5)
     return snap
 
 
