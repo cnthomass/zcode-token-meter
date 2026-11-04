@@ -182,7 +182,6 @@
     var tools = sess.tools || {};
     var sig = JSON.stringify([s, today, payload && payload.today_subagent, mySid,
       Math.round((live.speed || 0) * 10), liveSpeedFresh(),
-      payload && payload.rank_today && payload.rank_today[0] ? payload.rank_today[0].total : 0,
       bar.classList.contains("zu-light")]);
     if (sig === lastSig) return false;
     lastSig = sig;
@@ -235,13 +234,8 @@
     var st = (s && s.session_today) || {};
     segs.today.textContent = wan(tsum(st)) || "0";
 
-    // 排行：今日 TOP1 会话
-    var rk = (payload && payload.rank_today) || [];
-    if (rk.length) {
-      var t1 = cleanTitle(rk[0].title || rk[0].sid || "");
-      if (t1.length > 8) t1 = t1.slice(0, 8) + "…";
-      rkEl.textContent = t1 + " " + wan(rk[0].total);
-    } else rkEl.textContent = "–";
+    // 排行段：固定入口名（数据收进悬停/点击浮层）
+    rkEl.textContent = "Token消耗排行";
 
     // 子智能体
     var subT = tsum(sub);
@@ -628,6 +622,7 @@
    * 映射自动补挂（幂等：data-ztu-tail=turn_id，每容器至多一条）。
    * localStorage.ztuTail=0 关闭。 */
   var rkEl = row.querySelector(".zu-rank .ztu-v");
+  rkEl.textContent = "Token消耗排行";
   var tailTurnId = "";
   function tailText(t, s) {
     var bits = [];
