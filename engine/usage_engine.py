@@ -560,7 +560,13 @@ def main():
     con = connect(args.db)
     day0 = day_start_ms()
     if args.format == "rank":
-        since = 0 if args.days <= 0 else int(time.time() * 1000) - args.days * 86400000
+        # 自然日口径：days=1 即今日（本地 0 点以来）；days=N 为近 N 个自然日；0=全部历史
+        since = 0
+        if args.days >= 1:
+            lt = time.localtime()
+            back = args.days - 1
+            day = time.localtime(time.time() - back * 86400)
+            since = int(time.mktime((day.tm_year, day.tm_mon, day.tm_mday, 0, 0, 0, 0, 0, -1)) * 1000)
         rows = rank_sessions(con, since, args.sort, args.limit)
         print(render_rank(rows, args.days))
         con.close()
