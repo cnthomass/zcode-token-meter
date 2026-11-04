@@ -466,6 +466,33 @@
    * localStorage.ztuLive=0 关闭。 */
   var live = { chars: -1, t: 0, speed: 0, at: 0, sid: "" };
   function liveSpeedFresh() { return Date.now() - live.at < 2200; }
+  /* 自校准：窗口字符增量(w1=CJK,w2=其他) 与 db 真实输出 token(y) 做二变量最小二乘，
+   * 拟合 y = a*w1 + b*w2；n>=5 且解落在合理域才启用，localStorage 持久化。 */
+  var calib = { s11: 0, s12: 0, s22: 0, t1: 0, t2: 0, n: 0, a: null, b: null };
+  var wacc = { cjk: 0, other: 0 };
+  var prevTout = null, prevToutTurnId = "";
+  function calibLoad() {
+    try {
+      var c = JSON.parse(localStorage.getItem("ztuCalib") || "null");
+      if (c && c.n >= 5 && c.a > 0.05 && c.a < 3 && c.b > 0.05 && c.b < 8) calib = c;
+    } catch (e) { }
+  }
+  function calibSave() { try { localStorage.setItem("ztuCalib", JSON.stringify(calib)); } catch (e) { } }
+  function calibFit() {
+    var det = calib.s11 * calib.s22 - calib.s12 * calib.s12;
+    if (calib.n >= 5 && det > 1e-6) {
+      var a = (calib.t1 * calib.s22 - calib.t2 * calib.s12) / det;
+      var b = (calib.t2 * calib.s11 - calib.t1 * calib.s12) / det;
+      if (a > 0.05 && a < 3) calib.a = a;
+      if (b > 0.05 && b < 8) calib.b = b;
+      diagSet("liveCalib", { n: calib.n, a: calib.a && Math.round(calib.a * 1000) / 1000,
+        b: calib.b && Math.round(calib.b * 1000) / 1000 });
+      calibSave();
+    }
+  }
+  function coefCJK() { return calib.a != null ? calib.a : 0.7; }
+  function coefOther() { return calib.b != null ? calib.b : 1 / 3.5; }
+  function tokensOf(cjk, other) { return cjk * coefCJK() + other * coefOther(); }
   function sampleLive() {
     if (stale() || document.hidden) return;
     try {
@@ -489,7 +516,8 @@
         if (cc >= 0x2E80 && cc <= 0x9FFF) cjk++;       // CJK 统一表意区
       }
       var other = slice.length - cjk;
-      var tokens = cjk * 0.7 + other / 3.5;
+      wacc.cjk += cjk; wacc.other += other;
+      var tokens = tokensOf(cjk, other);
       var inst = tokens * 1000 / dt;
       live.speed = live.speed ? live.speed * 0.6 + inst * 0.4 : inst;
       live.at = now;
@@ -497,6 +525,7 @@
     } catch (e) { diagSet("liveErr", String(e && e.message || e)); }
   }
   setInterval(sampleLive, 400);
+  calibLoad();
 
   /* ---------- 回答末尾速率行 ----------
    * 插到最后一个 assistant-turn 容器内（内容列之后），随每次推送更新当前轮数据；
@@ -756,6 +785,24 @@
       diagSet("rankEcho", (payload.rank_today || []).map(function (r) {
         return [String(r.sid || "").slice(-6), r.tin, r.tout, r.sub_tin, r.sub_tout];
       }));
+      // 自校准采样：turn.tout 增量 ≈ 该窗口内完成的真实输出 token
+      try {
+        var tnow = payload.sessions && mySid && payload.sessions[mySid] &&
+                   payload.sessions[mySid].turn;
+        var toutNow = tnow ? (tnow.tout || 0) : null;
+        if (toutNow != null && prevTout != null && tnow && prevToutTurnId === tnow.turn_id) {
+          var dTout = toutNow - prevTout;
+          if (dTout > 0 && (wacc.cjk + wacc.other) > 20) {
+            var w1 = wacc.cjk, w2 = wacc.other, y = dTout;
+            calib.s11 += w1 * w1; calib.s12 += w1 * w2; calib.s22 += w2 * w2;
+            calib.t1 += w1 * y; calib.t2 += w2 * y; calib.n++;
+            calibFit();
+          }
+        }
+        prevTout = toutNow;
+        prevToutTurnId = tnow ? tnow.turn_id : "";
+        wacc.cjk = 0; wacc.other = 0;   // 窗口随推送重置
+      } catch (e) { diagSet("calibErr", String(e && e.message || e)); }
       setTimeout(upsertTail, 80);   // 让 React 先落定再挂速率行
       lastSig = "";   // 强制下帧重画
     } catch (e) { diagSet("updateErr", String(e && e.message || e)); }
